@@ -2,8 +2,8 @@ const request = require('request');
 const express = require('express');
 const router = express.Router();
 const {FusionAuthClient} = require('@fusionauth/typescript-client');
-const clientId = 'e0978451-fc04-477c-a294-c6fc90ba3b37';
-const clientSecret = 'XIKDDfobnz3HKKSPK0ZCWpK8rJNflqKy3kHclNL22Jk';
+const clientId = '7f013799-8fb3-4f23-a159-9f735147dfda';
+const clientSecret = 'kQ6JBzU6gdAFsA94fDVuMEuPG7rsm-SNxqsDJBuLKhY';
 const client = new FusionAuthClient('noapikeyneeded', 'http://localhost:9011');
 const checkAuthentication = require('../middleware/checkAuthentication');
 
@@ -29,7 +29,8 @@ router.get('/oauth-redirect', function (req, res, next) {
                                          clientSecret,
                                          'http://localhost:3000/oauth-redirect')
       .then((response) => {
-        console.log(response.response.access_token);
+        console.log('access_token: ' + response.response.access_token);
+        req.session.access_token = response.response.access_token;
         return client.retrieveUserUsingJWT(response.response.access_token);
       })
       .then((response) => {
@@ -44,7 +45,7 @@ router.get('/oauth-redirect', function (req, res, next) {
 const productUrl = 'http://localhost:3001';
 
 router.get('/products', function(req, res, next) {
-  req.headers['x-api-key'] = '12345';
+  req.headers.authorization = 'Bearer ' + req.session.access_token;
   req.pipe(request(`${productUrl}/products`)).pipe(res);
 });
 
@@ -57,7 +58,7 @@ router.get('/branches/:id/products', checkAuthentication, function(req, res, nex
   const user = req.session.user;
   const options = {
     url: `http://localhost:3002/branches/${req.params.id}/products`,
-    headers: { roles: user.registrations[0].roles }
+    headers: { authorization: 'Bearer ' + req.session.access_token }
   };
   request(options).pipe(res);
 });
