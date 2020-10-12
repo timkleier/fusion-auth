@@ -29,7 +29,6 @@ router.get('/oauth-redirect', function (req, res, next) {
                                          clientSecret,
                                          'http://localhost:3000/oauth-redirect')
       .then((response) => {
-        console.log('access_token: ' + response.response.access_token);
         req.session.access_token = response.response.access_token;
         return client.retrieveUserUsingJWT(response.response.access_token);
       })
