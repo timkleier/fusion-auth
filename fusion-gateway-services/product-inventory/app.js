@@ -1,3 +1,5 @@
+const { JWT_SIGNING_KEY, LOGIN_REDIRECT_URL } = process.env;
+
 var createError = require('http-errors');
 var cookieParser = require('cookie-parser');
 var express = require('express');
@@ -6,7 +8,7 @@ var path = require('path');
 var logger = require('morgan');
 var sassMiddleware = require('node-sass-middleware');
 
-var authorizationMiddleware = require('./middleware/authorizationMiddleware');
+var authorizationMiddleware = require('authorization-middleware');
 var indexRouter = require('./routes/index');
 
 var app = express();
@@ -19,7 +21,7 @@ app.use(logger('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
-app.use(expressSession({resave: false, saveUninitialized: false, secret: 'fusionauth-node-example'}));
+app.use(expressSession({name: 'fa.pi.sid', resave: false, saveUninitialized: false, secret: 'fusionauth-node-example'}));
 app.use(sassMiddleware({
   src: path.join(__dirname, 'public'),
   dest: path.join(__dirname, 'public'),
@@ -28,7 +30,7 @@ app.use(sassMiddleware({
 }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.use(authorizationMiddleware);
+app.use(authorizationMiddleware({ jwtSigningKey: JWT_SIGNING_KEY, loginRedirectUrl: LOGIN_REDIRECT_URL }));
 app.use('/', indexRouter);
 
 // catch 404 and forward to error handler
