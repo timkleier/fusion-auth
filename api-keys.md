@@ -9,10 +9,10 @@ So here's what we'll do:
 * Add the `jsonwebtoken` package to our gateway and microservices
 * Utilize FusionAuth's HMAC default signing key to create [signed JWTs](https://jwt.io/introduction/) for the gateway to pass to the microservices
 * Decode that JWT in each of the microservices, using the same signing key, to verifying the request
-* In the case of needing the pre-signed user `access_token` for role-based access, the gateway will forward it on and the microservices will decode it in the same way
+* For role-based access checks, the gateway will forward the user's signed `access_token` from FusionAuth as an Authorization Bearer token, allowing microservices to verify and determine the caller's roles
 
 ## JWT Authorization
-JWTs are a common standard for securely passing JSON-based information between applications. We're going to use them for the purpose of authorization (authorizing the gateway to access the microservices) as well as passing information (just user roles for now).
+JWTs are an industry standard way for securely passing claims between two parties, allowing that information to be verified by the recipient. We're going to use them for the purpose of authorization (authorizing the gateway to access the microservices) as well as passing information (user claims, such as role membership).
 
 In your gateway application, install `jsonwebtoken`:
 ```
@@ -21,18 +21,21 @@ In your gateway application, install `jsonwebtoken`:
 Next we'll head over to FusionAuth to get our public key for signing the JWT.
 
 ### Signing
-By signing JWTs using FusionAuth's default signing key, we're effectively limiting access to applications that have the public key, thus making requests between the gateway and microservices private.
+By signing JWTs using FusionAuth's default signing key, we're effectively limiting access to applications that have the public key, thus allowing private microservices to ensure the incoming message is from a trusted caller, the gateway in this case.
 
 To access your FusionAuth default signing key, go to **Settings > Keys**, click on the magnifying glass next to the key with the name "Default signing key", then reveal and copy the "Secret".
 
 [image(s)]
 
 Now we add this as a variable to the gateway application (in `/routes/index.js`) and require the `jsonwebtoken` library:
+
+*NOTE:* In production applications, avoid storing secrets in code. Instead, use a separate secrets store and obtain the secret from that store at runtime.
+
 ```
   const jwtSigningKey = '[Default Signing Key]';
   const jwt = require('jsonwebtoken');
 ```
-Next, we'll add a function at the end of that file to get the gateway bearer token for forwarding to the microservices.
+Next, we'll add a function at the end of that file to get the gateway bearer token for forwarding to the microservices. In thise case, we are setting the token to expire in 10 minutes, but this could be different depending on your scenario.
 ```
   function getGatewayBearerToken(req) {
     var token = jwt.sign({ data: req.url }, jwtSigningKey, { expiresIn: '10m', subject: 'gateway', issuer: req.get('host') });
@@ -44,7 +47,7 @@ Next, we'll add a function at the end of that file to get the gateway bearer tok
 `getGatewayBearerToken()` creates a bearer token valid for ten minutes and utilizes our public signing key. It's how we will provide secure, general access between the gateway and microservices.
 
 ## Gateway Router Integration
-For the Product Catalog routes, we'll use `getGatewayBearerToken()` to prepare the bearer token and attach the result as an `authorization` header.
+For the Product Catalog routes, we'll use `getGatewayBearerToken()` to prepare the bearer token and attach the result as a Bearer token in the `authorization` header.
 
 ```
   router.get('/products', function(req, res, next) {
@@ -137,15 +140,15 @@ We have our `authorizationMiddleware` in place, and it's pretty simple to integr
 ```
 Note that we're using the `authorizationMiddleware` prior to the `indexRouter`, which will ensure the middleware is applied to all our routes.
 
-Remember that we're using the `jwtSigningKey` to verify the JWT has been signed with the FusionAuth default signing key. Above, we manually pasted the string in, but here we've implemented it as an environment variable. This is the recommend option for the most secure, long-term solution.
+Remember that we're using the `jwtSigningKey` to verify the JWT has been signed with the FusionAuth default signing key. Above, we manually pasted the string in, but here we've implemented it as an environment variable. This is better than hard-coding the key in code.
 
 ## Product Inventory Integration
-The Product Inventory service endpoint, `/branches/:id/product` has role-based access, so we're going to rework our gateway to pass the user role, which is embedded in the token we got from FusionAuth OAuth login. Before hopping over to the gateway application to make that change, let's first make changes in the Product Inventory service.
+The Product Inventory service endpoint, `/branches/:id/product` has role-based access, so we're going to rework our gateway to pass the user role, which is included in the response we got from the FusionAuth OAuth login flow. Before hopping over to the gateway application to make that change, let's first make changes in the Product Inventory service.
 
 Follow the same steps above for adding the `authorizationMiddleware` to `app.js`, but do so in the Product Inventory service. Then we'll just need to slightly modify the `routes/index.js` file:
 ```
   router.get('/branches/:id/products', function(req, res, next) {
-    const roles = req.session.roles; // this used to req.headers.roles
+    const roles = req.session.roles; // this is used to be req.headers.roles
 
     if (roles && roles.includes('admin')) {
       res.json(`Products for branch #${req.params.id}`);
@@ -189,7 +192,7 @@ Then click on "Users", find the user you created, and under the "Registrations" 
 The next time you log in to FusionAuth and access the `/branches/:id/products` route, you should pass authorization and receive the expected response from the Product Inventory service.
 
 ## Session Housekeeping
-If you try multiple requests across the services, you may notice you're getting responses indicated you're unauthorized due to the session is dropping the `access_token`. The fix for this is simple, you'll just need to add a unique name to the `expressSession` in the gateway and each of our microservices.
+If you try multiple requests across the services, you may notice you're getting responses indicated you're unauthorized due to the session id changing. This is becaue the private services are responding with their own session cookie, which is overriding the one from the gateway. The fix for this is simple; you'll just need to add a unique name to the `expressSession` in the gateway and each of our microservices.
 
 ```
   // in the gateway, app.js
