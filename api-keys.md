@@ -148,7 +148,7 @@ The Product Inventory service endpoint, `/branches/:id/product` has role-based a
 Follow the same steps above for adding the `authorizationMiddleware` to `app.js`, but do so in the Product Inventory service. Then we'll just need to slightly modify the `routes/index.js` file:
 ```
   router.get('/branches/:id/products', function(req, res, next) {
-    const roles = req.session.roles; // this is used to be req.headers.roles
+    const roles = req.session.roles; // this used to be req.headers.roles
 
     if (roles && roles.includes('admin')) {
       res.json(`Products for branch #${req.params.id}`);
