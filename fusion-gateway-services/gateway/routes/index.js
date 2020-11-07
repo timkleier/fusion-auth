@@ -1,9 +1,12 @@
 const request = require('request');
 const express = require('express');
+const jwt = require('jsonwebtoken');
 const router = express.Router();
 const {FusionAuthClient} = require('@fusionauth/typescript-client');
-const clientId = 'e0978451-fc04-477c-a294-c6fc90ba3b37';
-const clientSecret = 'XIKDDfobnz3HKKSPK0ZCWpK8rJNflqKy3kHclNL22Jk';
+// TODO: Ideally these should be pulled from a secret store.
+const clientId = '7f013799-8fb3-4f23-a159-9f735147dfda';
+const clientSecret = 'kQ6JBzU6gdAFsA94fDVuMEuPG7rsm-SNxqsDJBuLKhY';
+const jwtSigningKey = 'AVnx4v4zlOo/Z657ZswYPDeHYGvG37e13oVz0X8xM8s=';
 const client = new FusionAuthClient('noapikeyneeded', 'http://localhost:9011');
 const checkAuthentication = require('../middleware/checkAuthentication');
 
@@ -29,7 +32,7 @@ router.get('/oauth-redirect', function (req, res, next) {
                                          clientSecret,
                                          'http://localhost:3000/oauth-redirect')
       .then((response) => {
-        console.log(response.response.access_token);
+        req.session.access_token = response.response.access_token;
         return client.retrieveUserUsingJWT(response.response.access_token);
       })
       .then((response) => {
@@ -44,22 +47,42 @@ router.get('/oauth-redirect', function (req, res, next) {
 const productUrl = 'http://localhost:3001';
 
 router.get('/products', function(req, res, next) {
-  req.headers['x-api-key'] = '12345';
-  req.pipe(request(`${productUrl}/products`)).pipe(res);
+  const bearerToken = getGatewayBearerToken(req);
+  const options = {
+    url: `${productUrl}/products`,
+    headers: { authorization: bearerToken }
+  };
+  request(options).pipe(res);
 });
 
 router.get('/products/:id', function(req, res, next) {
-  request(`${productUrl}/products/${req.params.id}`).pipe(res);
+  const bearerToken = getGatewayBearerToken(req);
+  const options = {
+    url: `${productUrl}/products/${req.params.id}`,
+    headers: { authorization: bearerToken }
+  };
+  request(options).pipe(res);
 });
 
 /* PRODUCT INVENTORY ROUTES */
 router.get('/branches/:id/products', checkAuthentication, function(req, res, next) {
-  const user = req.session.user;
+  const bearerToken = getUserBearerToken(req);
   const options = {
     url: `http://localhost:3002/branches/${req.params.id}/products`,
-    headers: { roles: user.registrations[0].roles }
+    headers: { authorization: bearerToken }
   };
   request(options).pipe(res);
 });
 
 module.exports = router;
+
+function getGatewayBearerToken(req) {
+  // TODO: Consider using an access_token from an OAuth 2.0 Client Credentials flow instead when supported by FusionAuth.
+  // See https://github.com/FusionAuth/fusionauth-issues/issues/155
+  var token = jwt.sign({ data: req.url }, jwtSigningKey, { expiresIn: '10m', subject: 'gateway', issuer: req.get('host') });
+  return 'Bearer ' + token;
+}
+
+function getUserBearerToken(req) {
+  return 'Bearer ' + req.session.access_token;
+}
